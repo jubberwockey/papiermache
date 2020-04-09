@@ -169,7 +169,7 @@ class ZoteroDatabase():
         WHERE i.key = ?
         ;"""
         local_cursor.execute(sql, (key,))
-        columns = [c[0] for c in local_cursor.description]
+        # columns = [c[0] for c in local_cursor.description]
         data = local_cursor.fetchall()
 
         collections_list = [coll[0] for coll in data]
@@ -192,7 +192,7 @@ class ZoteroDatabase():
         LEFT JOIN itemData id ON i.itemID = id.itemID
         LEFT JOIN fields f ON id.fieldID = f.fieldID
         LEFT JOIN itemDataValues idv ON id.valueID = idv.valueID
-        WHERE ic.orderIndex = 1 -- only first author
+        WHERE ic.orderIndex = 0 -- only first author
         AND fieldName IN ('title', 'shortTitle', 'date')
         GROUP BY i.key;"""
 
@@ -206,3 +206,42 @@ class ZoteroDatabase():
         autocomplete_dict = {i['key']: (i['lastName'] or 'No Author') + ', ' + (i['year'] or 'xxxx') + ' - '
              + (i['shortTitle'] or i['title'] or 'Unknown Title') for i in items_list}
         return autocomplete_dict
+
+    def get_attachments(self, key, local_cursor=None):
+        sql = """SELECT
+            --i.key,
+            ia.path
+        FROM items i
+        LEFT JOIN itemAttachments ia ON i.itemID = ia.parentItemID
+        WHERE i.key = ?
+        ;"""
+        cursor = local_cursor or self.cursor
+        cursor.execute(sql, (key,))
+        # columns = [c[0] for c in cursor.description]
+        data = cursor.fetchall()
+
+        attachment_list = [att[0] for att in data]
+        attachment_list.remove(None)
+        return attachment_list
+
+    def create_attachment(self, file_name, parent_key=None, local_cursor=None):
+
+        if local_cursor is not None:
+            warnings.warn("Not implemented. Modifying local db is dangerous")
+        else:
+            attachment = self.zot.item_template('attachment', 'linked_file')
+            attachment['title'] = file_name
+            attachment['path'] = 'attachments:' + file_name
+            attachment['contentType'] = 'application/pdf'
+            self.zot.check_items([attachment])
+            response = self.zot.create_items([attachment], parentid=parent_key)
+            if '0' in response['success']:
+                created_key = response['success']['0']
+                return created_key
+            else:
+                warnings.warn("Attachment creation failed.")
+                print(response['failed'])
+                return None
+
+    def update_relations(self):
+        pass

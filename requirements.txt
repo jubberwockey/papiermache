@@ -1,0 +1,7 @@
+prompt-toolkit
+pyzotero
+sqlite3
+beautifulsoup4
+requests
+retrying
+pysocks
