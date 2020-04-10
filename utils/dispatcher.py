@@ -14,7 +14,7 @@ class Dispatcher():
                 # 'ip': {'interface': {'brief'}}
             },
             'find': None,
-            'select': {},
+            'select': {'all': None},
             'add': {'pdf': {}},
         }
         self.cmd_template.update({c: None for c in self.exit_cmds})
@@ -36,8 +36,8 @@ class Dispatcher():
         self.papers = self.db.get_autocompletes()
         self.papers_reverse = {v: k for k, v in self.papers.items()}
         paper_completions = {v: None for v in self.papers.values()}
-        self.completions['select'] = paper_completions
-        self.completions['add']['pdf'] = paper_completions
+        self.completions['select'].update(paper_completions)
+        self.completions['add']['pdf'].update(paper_completions)
 
         return NestedCompleter.from_nested_dict(self.completions)
 
