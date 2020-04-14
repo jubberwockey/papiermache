@@ -31,7 +31,7 @@ SCHOLARS_BASE_URL = 'https://scholar.google.com/scholar'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:27.0) Gecko/20100101 Firefox/27.0'}
 
 SCIHUB_FALLBACK_URLS = [
-    "http://sci-hub.tw",
+    "https://sci-hub.tw",
 ]
 
 class SciHub(object):
@@ -46,7 +46,7 @@ class SciHub(object):
         self.available_base_url_list = self._get_available_scihub_urls(use_fallback=use_fallback)
         self.base_url = self.available_base_url_list[0] + '/'
 
-    def _get_available_scihub_urls(self, use_fallback):
+    def _get_available_scihub_urls(self, use_fallback=False):
         '''
         Finds available scihub urls via https://sci-hub.now.sh/
         '''

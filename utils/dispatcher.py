@@ -5,7 +5,8 @@ from lisc.requester import Requester
 from lisc.urls.open_citations import OpenCitations
 from utils.db import ZoteroDatabase
 from utils.scihub import SciHub
-
+import utils.utils as utils
+import unicodedata
 
 class Dispatcher():
 
@@ -34,6 +35,14 @@ class Dispatcher():
                     'tag': None,
                     },
                 },
+            'fix': {
+                'path': {
+                    'all': None,
+                    'none': None,
+                    'collection': None,
+                    'tag': None,
+                    },
+                }
             }
         self.cmd_template.update({c: None for c in self.exit_cmds})
         self.paper_dir = os.environ['PAPER_PATH']
@@ -56,6 +65,7 @@ class Dispatcher():
         self.completions['select'].update(paper_completions)
         self.completions['add']['pdf'].update(paper_completions)
         self.completions['add']['relations'].update(paper_completions)
+        self.completions['fix']['path'].update(paper_completions)
 
         return NestedCompleter.from_nested_dict(self.completions)
 
@@ -169,37 +179,48 @@ class Dispatcher():
     def execute_add_pdf(self, cmd_list):
         if len(cmd_list) == 0:
             selected_keys = self.selected_keys
-            print('Add for previously selected papers.')
         else:
-            selected_keys = select_keys(cmd_list)
+            selected_keys = self.select_keys(cmd_list)
 
-        attachments = self.db.get_attachments(selected_keys)[0]
-        if len(attachments) > 0:
-            print('Attachments already present')
-            print(attachments)
+        file_types = ['pdf', 'epub', 'djvu', 'mobi', 'okular']
 
-        # input = self.session.prompt('>>Are you sure? y/n: ')
-        # if input == 'y':
-        #     scihub = SciHub(use_fallback=True)
-        #     item_data = self.db.get_items(selected_keys)[0]
-        #
-        #     file_name = self.build_file_name(item_data)
-        #
-        #     if 'DOI' in item_data:
-        #         result = scihub.download(item_data['DOI'], path=self.paper_dir+file_name)
-        #     elif 'url' in item_data:
-        #         result = scihub.download(item_data['url'], path=self.paper_dir+file_name)
-        #     else:
-        #         print('No DOI/URL found, please provide:')
-        #         url = self.session.prompt('>>')
-        #         result = scihub.download(url, path=self.paper_dir+file_name)
-        #
-        #     if 'err' in result:
-        #         warnings.warn("Could not retrieve file. Attachment creation skipped.")
-        #     else:
-        #         created_key = self.db.create_attachment(file_name, selected_keys)
-        #         print('Created key', created_key)
-        #         return created_key
+        items = self.db.get_items(keys=selected_keys)
+        attachments = self.db.get_attachments(parent_keys=selected_keys)
+
+        attachment_keys = [a['parentItem'] for a in attachments
+                           if 'parentItem' in a and (a.get('path', '').split('.')[-1]).lower() in file_types]
+
+        # no_attachments_dict = {i['key']: {'url': i.get('url'), 'DOI': utils.get_doi(i), 'ISBN': i.get('ISBN')}
+        #                        for i in items if i['key'] not in attachment_keys}
+
+        # no_att_items = [i for i in items if i['key'] not in attachment_keys]
+
+        for item in items:
+            key = item['key']
+            if key not in attachment_keys:
+                file_name = self.build_file_name(item)
+                file_path = self.paper_dir + file_name
+
+                url = utils.get_doi(item) or item['url']
+                if url:
+                    success = self.download_file(url, file_path)
+                else:
+                    success = False
+                    warnings.warn("Download not successful")
+
+                if success:
+                    created_key = self.db.create_attachment(file_name, key)
+                    print('Created key', created_key)
+                    return created_key
+
+    def download_file(self, url, file_path, source='scihub'):
+        if source == 'scihub':
+            scihub = SciHub(use_fallback=False)
+            result = scihub.download(url, path=file_path)
+            if 'err' not in result:
+                return True
+            else:
+                return False
 
     def select_keys(self, cmd_list):
         selected = ' '.join(cmd_list)
@@ -212,19 +233,26 @@ class Dispatcher():
         print('Selected:', selected_keys)
         return selected_keys
 
-    def build_file_name(self, item_dict):
-        name = item_dict['creators'][0]['lastName']
-        if len(item_dict['creators']) > 1:
-             name += ' et al'
+    def build_file_name(self, item_dict, file_type='pdf'):
+        if 'creators' in item_dict:
+            name = item_dict['creators'][0]['lastName']
+            if len(item_dict['creators']) == 2:
+                name += '_' + item_dict['creators'][1]['lastName']
+            elif len(item_dict['creators']) > 2:
+                 name += ' et al'
+        else:
+            name = ''
 
-        year = item_dict['date'].split('-')[0]
+        year = item_dict.get('date', '').split('-')[0]
 
         if 'shortTitle' in item_dict:
             title = item_dict['shortTitle'].split(':')[0]
         else:
-            title = item_dict['title'].split(':')[0]
+            title = item_dict.get('title', '').split(':')[0]
 
-        return '_'.join([name, year, title]) + '.pdf'
+        file_name = '_'.join([name, year, title]) + '.' + file_type
+        file_name = unicodedata.normalize('NFD', file_name).encode('ascii', 'ignore').decode('utf-8')
+        return file_name
 
     def get_relations_by_doi(self, doi):
         oc = OpenCitations()
