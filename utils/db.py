@@ -126,12 +126,20 @@ class ZoteroDatabase():
                     if i['key'] in collections_data:
                         i['collections'] = collections_data[i['key']]
             else:
-                warnings.warn("Filter not yet implemented")
+                warnings.warn("Filters not fully implemented")
                 sql = """SELECT s.data FROM syncCache s;"""
                 cursor.execute(sql)
                 columns = [c[0] for c in cursor.description]
                 data = cursor.fetchall()
-                items = [json.loads(i[0]) for i in data]
+                items = [json.loads(i[0])['data'] for i in data]
+                if len(keys) > 0:
+                    items = [i for i in items if i['key'] in keys]
+                if len(item_type) > 0:
+                    pass
+                if len(tags) > 0:
+                    pass
+                if limit >= 0:
+                    items = items[0:limit]
 
         return items
 
@@ -541,9 +549,10 @@ class ZoteroDatabase():
             columns = [c[0] for c in cursor.description]
             data = cursor.fetchall()
 
-            relations_dict = {rel[0]: {rel[1]: []} for rel in data}
+            relations_dict = {rel[0]: {} for rel in data}
             for rel in data:
-                relations_dict[rel[0]][rel[1]].append(rel[2])
+                relations_dict[rel[0]].setdefault(rel[1], []).append(rel[2])
+
 
             return relations_dict
 
@@ -594,6 +603,8 @@ class ZoteroDatabase():
         Provides a convenience dictionary for building the autocomplete engine.
         Data is retrieved from the local database only, not the zotero API!
         Returns only entries with a title or short title!
+        For some reason first author in the database does not necessarily match
+        first author in the zotero UI!
 
         Arguments:
             local_cursor: cursor for local database. If None, attempt using the
@@ -601,7 +612,7 @@ class ZoteroDatabase():
 
         Returns:
             dict with database key and corresponding name for the autocomplete
-            engine: First author name, year - title
+            engine: First author name, year - title.
         """
 
         sql = """SELECT
