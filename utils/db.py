@@ -14,16 +14,41 @@ class ZoteroDatabase():
         self.zot = Zotero(self.user_id, 'user',
                           os.environ['ZOTERO_API_KEY'], preserve_json_order=True)
         if local == True:
-            conn = connect(os.environ['ZOTERO_DB_PATH'])
-            self.cursor = conn.cursor()
+            self.cursor = self.connect()
         else:
             self.cursor = None
 
+    def connect(self):
+        """
+        Connect to local zotero database.
+
+        Returns:
+            cursor instance
+        """
+        conn = connect(os.environ['ZOTERO_DB_PATH'])
+        return conn.cursor()
+
     def close_connection(self):
+        """
+        Properly close connection to local database.
+        """
         if self.cursor is not None:
             return self.cursor.close()
 
     def build_sql(self, sql, keys=[], parent_keys=[], item_type='', tags='', limit=-1, groupby=[]):
+        """
+        Build complete SQL statement from sql stub to query the zotero database.
+
+        Arguments:
+            sql: sql stub to use
+            keys: list of keys to filter for
+            parent_keys: list of parent keys to filter for, if applicable
+            item_type: filter for e.g. 'journalArticle' etc. for syntax see:
+            https://www.zotero.org/support/dev/web_api/v3/basics#search_syntax
+            tags: filter for tags, currently not implemented.
+            limit: number of items to retrieve. If -1, return all items
+            groupby: list of keys to group by
+        """
         if len(keys) > 0:
             keys_str = ','.join(map(lambda s: "'{}'".format(s), keys))
             sql += "\nAND i.key IN ({})".format(keys_str)
@@ -57,6 +82,24 @@ class ZoteroDatabase():
         return sql
 
     def get_items(self, keys=[], item_type='', tags='', limit=-1, local_cursor=None, use_cache=False):
+        """
+        Gets list of zotero data items from either the local database or through
+        the zotero API.
+
+        Arguments:
+            keys: filter for keys, see build_sql
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+            local_cursor: if None, get items over API. There is a limit to
+            retrieved items. If local cursor specified, use the local database
+            use_cache: if True, use syched cache to from the zotero API to
+            return items from local database. Possibly faster, but filtering not
+            implemented.
+
+        Returns:
+            list of zotero data items conforming to the zotero API format
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -93,6 +136,18 @@ class ZoteroDatabase():
         return items
 
     def get_notes(self, keys=[], parent_keys=[], tags='', limit=-1, local_cursor=None):
+        """
+        Retrieves note items from local database of zotero API.
+
+        Arguments:
+            keys: filter for keys of the note item(!), see build_sql
+            parent_keys: filter for keys of parent items (i.e. publications)
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+            local_cursor: if None, get items over API. There is a limit to
+            retrieved items. If local cursor specified, use the local database
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -126,6 +181,18 @@ class ZoteroDatabase():
         return items
 
     def get_attachments(self, keys=[], parent_keys=[], tags='', limit=-1, local_cursor=None):
+        """
+        Retrieves attachment items from local database of zotero API.
+
+        Arguments:
+            keys: filter for keys of the note item(!), see build_sql
+            parent_keys: filter for keys of parent items (i.e. publications)
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+            local_cursor: if None, get items over API. There is a limit to
+            retrieved items. If local cursor specified, use the local database
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -157,6 +224,17 @@ class ZoteroDatabase():
 
 
     def get_items_data_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+        """
+        Retrieves item data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            parent_keys: filter for keys of parent items (i.e. publications)
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -234,6 +312,16 @@ class ZoteroDatabase():
             return items_list
 
     def get_notes_data_local(self, cursor=None, keys=[], parent_keys=[], tags='', limit=-1):
+        """
+        Retrieves notes data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            parent_keys: filter for keys of parent items (i.e. publications)
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -266,6 +354,16 @@ class ZoteroDatabase():
             return notes_list
 
     def get_attachments_data_local(self, cursor=None, keys=[], parent_keys=[], tags='', limit=-1):
+        """
+        Retrieves attachment data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            parent_keys: filter for keys of parent items (i.e. publications)
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -317,6 +415,16 @@ class ZoteroDatabase():
             return attachments_list
 
     def get_items_creators_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+        """
+        Retrieves creator data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -353,6 +461,16 @@ class ZoteroDatabase():
             return creators_dict
 
     def get_items_tags_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+        """
+        Retrieves tags data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -388,6 +506,16 @@ class ZoteroDatabase():
             return tags_dict
 
     def get_items_relations_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+        """
+        Retrieves relations data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -420,6 +548,16 @@ class ZoteroDatabase():
             return relations_dict
 
     def get_items_collections_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+        """
+        Retrieves collections data from local database to build zotero item.
+
+        Arguments:
+            cursor: Cursor instance to local database
+            keys: filter for keys of the note item(!), see build_sql
+            item_type: filter for item types, see build_sql
+            tags: filter for tags, see build_sql
+            limit: limit returned items, see build_sql
+        """
         if not isinstance(keys, list):
             keys = [keys]
 
@@ -451,163 +589,20 @@ class ZoteroDatabase():
 
             return collections_dict
 
-    # def get_item(self, key, local_cursor=None):
-    #     # use local_cursor, 1st fallback is
-    #     cursor = local_cursor or self.cursor
-    #
-    #     if cursor is None:
-    #         return self.zot.item(key)['data']
-    #     elif cursor is self.cursor:
-    #         item_dict = self.get_item_data(key, cursor)
-    #
-    #         item_dict['creators'] = self.get_creators(key, cursor)
-    #         item_dict['tags'] = self.get_tags(key, cursor)
-    #         item_dict['collections'] = self.get_collections(key, cursor)
-    #         item_dict['relations'] = self.get_relations(key, cursor)
-    #
-    #         return item_dict
-    #
-    # def get_item_data(self, key, local_cursor):
-    #     sql = """SELECT
-    #         i.key,
-    #         --i.version,
-    #         MAX(it.typeName) AS itemType,
-    #         MAX(CASE WHEN fieldName = 'title' THEN value END) AS title,
-    #         MAX(CASE WHEN fieldName = 'url' THEN value END) AS url,
-    #         MAX(CASE WHEN fieldName = 'volume' THEN value END) AS volume,
-    #         MAX(CASE WHEN fieldName = 'issue' THEN value END) AS issue,
-    #         MAX(CASE WHEN fieldName = 'pages' THEN value END) AS pages,
-    #         MAX(CASE WHEN fieldName = 'publicationTitle' THEN value END) AS publicationTitle,
-    #         MAX(CASE WHEN fieldName = 'ISSN' THEN value END) AS ISSN,
-    #         MAX(CASE WHEN fieldName = 'date' THEN value END) AS date,
-    #         MAX(CASE WHEN fieldName = 'DOI' THEN value END) AS DOI,
-    #         MAX(CASE WHEN fieldName = 'accessDate' THEN value END) AS accessDate,
-    #         MAX(CASE WHEN fieldName = 'libraryCatalog' THEN value END) AS libraryCatalog,
-    #         MAX(CASE WHEN fieldName = 'language' THEN value END) AS language,
-    #         MAX(CASE WHEN fieldName = 'abstractNote' THEN value END) AS abstractNote,
-    #         MAX(CASE WHEN fieldName = 'shortTitle' THEN value END) AS shortTitle,
-    #         MAX(CASE WHEN fieldName = 'place' THEN value END) AS place,
-    #         MAX(CASE WHEN fieldName = 'publisher' THEN value END) AS publisher,
-    #         MAX(CASE WHEN fieldName = 'ISBN' THEN value END) AS ISBN,
-    #         MAX(CASE WHEN fieldName = 'callNumber' THEN value END) AS callNumber,
-    #         MAX(CASE WHEN fieldName = 'numPages' THEN value END) AS numPages,
-    #         MAX(CASE WHEN fieldName = 'extra' THEN value END) AS extra,
-    #         MAX(CASE WHEN fieldName = 'bookTitle' THEN value END) AS bookTitle,
-    #         MAX(CASE WHEN fieldName = 'journalAbbreviation' THEN value END) AS journalAbbreviation,
-    #         MAX(CASE WHEN fieldName = 'edition' THEN value END) AS edition,
-    #         MAX(CASE WHEN fieldName = 'series' THEN value END) AS series,
-    #         MAX(CASE WHEN fieldName = 'seriesNumber' THEN value END) AS seriesNumber,
-    #         MAX(CASE WHEN fieldName = 'institution' THEN value END) AS institution,
-    #         MAX(CASE WHEN fieldName = 'reportNumber' THEN value END) AS reportNumber,
-    #         MAX(CASE WHEN fieldName = 'conferenceName' THEN value END) AS conferenceName,
-    #         MAX(CASE WHEN fieldName = 'proceedingsTitle' THEN value END) AS proceedingsTitle,
-    #         MAX(CASE WHEN fieldName = 'reportType' THEN value END) AS reportType,
-    #         MAX(CASE WHEN fieldName = 'seriesTitle' THEN value END) AS seriesTitle,
-    #         MAX(CASE WHEN fieldName = 'thesisType' THEN value END) AS thesisType,
-    #         MAX(CASE WHEN fieldName = 'university' THEN value END) AS university,
-    #         MAX(CASE WHEN fieldName = 'archive' THEN value END) AS archive,
-    #         MAX(CASE WHEN fieldName = 'rights' THEN value END) AS rights,
-    #         MAX(CASE WHEN fieldName = 'websiteTitle' THEN value END) AS websiteTitle,
-    #         MAX(CASE WHEN fieldName = 'encyclopediaTitle' THEN value END) AS encyclopediaTitle,
-    #         MAX(CASE WHEN fieldName = 'websiteType' THEN value END) AS websiteType,
-    #         MAX(CASE WHEN fieldName = 'archiveLocation' THEN value END) AS archiveLocation,
-    #         MAX(CASE WHEN fieldName = 'blogTitle' THEN value END) AS blogTitle,
-    #         MAX(CASE WHEN fieldName = 'manuscriptType' THEN value END) AS manuscriptType,
-    #         MAX(dateAdded) AS dateAdded,
-    #         MAX(dateModified) AS dateModified
-    #     FROM items i
-    #     LEFT JOIN itemData id ON i.itemID = id.itemID
-    #     LEFT JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
-    #
-    #     LEFT JOIN fields f ON id.fieldID = f.fieldID
-    #     LEFT JOIN itemDataValues idv ON id.valueID = idv.valueID
-    #     WHERE i.key = ?
-    #     GROUP BY i.key
-    #     ;"""
-    #     local_cursor.execute(sql, (key,))
-    #     columns = [c[0] for c in local_cursor.description]
-    #     data = local_cursor.fetchone()
-    #     full_item_dict = dict(zip(columns, data))
-    #
-    #     item_dict = {k:v for k, v in full_item_dict.items() if v is not None}
-    #     return item_dict
-    #
-    # def get_creators(self, key, local_cursor):
-    #     sql = """SELECT
-    #         --i.key,
-    #         ct.creatorType,
-    #         c.firstName,
-    #         c.lastName
-    #     FROM items i
-    #     LEFT JOIN itemCreators ic ON i.itemID = ic.itemID
-    #     LEFT JOIN creators c ON ic.creatorID = c.creatorID
-    #     LEFT JOIN creatorTypes ct ON ic.creatorTypeID = ct.creatorTypeID
-    #     WHERE i.key = ?
-    #     ;"""
-    #     local_cursor.execute(sql, (key,))
-    #     columns = [c[0] for c in local_cursor.description]
-    #     data = local_cursor.fetchall()
-    #
-    #     creators_list = [dict(zip(columns, creator)) for creator in data]
-    #
-    #     return creators_list
-    #
-    # def get_tags(self, key, local_cursor):
-    #     sql = """SELECT
-    #         --i.key,
-    #         t.name AS tag,
-    #         it.type AS is_automatic
-    #     FROM items i
-    #     LEFT JOIN itemTags it ON i.itemID = it.itemID
-    #     LEFT JOIN tags t ON it.tagID = t.tagID
-    #     WHERE i.key = ?
-    #     ;"""
-    #     local_cursor.execute(sql, (key,))
-    #     columns = [c[0] for c in local_cursor.description]
-    #     data = local_cursor.fetchall()
-    #
-    #     full_tags_list = [dict(zip(columns, tag)) for tag in data]
-    #     manual_tags_list = [{'tag': tag['tag']} for tag in full_tags_list if tag['is_automatic'] == 0]
-    #
-    #     return manual_tags_list
-    #
-    # def get_relations(self, key, local_cursor):
-    #     sql = """SELECT
-    #         --i.key,
-    #         rp.predicate,
-    #         ir.object
-    #     FROM items i
-    #     LEFT JOIN itemRelations ir ON i.itemID = ir.itemID
-    #     LEFT JOIN relationPredicates rp ON ir.predicateID = rp.predicateID
-    #     WHERE i.key = ?
-    #     ;"""
-    #     local_cursor.execute(sql, (key,))
-    #     columns = [c[0] for c in local_cursor.description]
-    #     data = local_cursor.fetchall()
-    #
-    #     relations = {rel[0] for rel in data}
-    #     relations_dict = {rel: [d[1] for d in data] for rel in relations}
-    #     return relations_dict
-    #
-    # def get_collections(self, key, local_cursor):
-    #     sql = """SELECT
-    #         --i.key,
-    #         c.key AS collection_key,
-    #         c.collectionName
-    #     FROM items i
-    #     LEFT JOIN collectionItems ci ON i.itemID = ci.itemID
-    #     LEFT JOIN collections c ON ci.collectionID = c.collectionID
-    #     WHERE i.key = ?
-    #     ;"""
-    #     local_cursor.execute(sql, (key,))
-    #     # columns = [c[0] for c in local_cursor.description]
-    #     data = local_cursor.fetchall()
-    #
-    #     collections_list = [coll[0] for coll in data]
-    #     return collections_list
-
     def get_autocompletes(self, local_cursor=None):
-        """returns only entries with a title or short title!"""
+        """
+        Provides a convenience dictionary for building the autocomplete engine.
+        Data is retrieved from the local database only, not the zotero API!
+        Returns only entries with a title or short title!
+
+        Arguments:
+            local_cursor: cursor for local database. If None, attempt using the
+            cursor defined elsewhere in the instance.
+
+        Returns:
+            dict with database key and corresponding name for the autocomplete
+            engine: First author name, year - title
+        """
 
         sql = """SELECT
             i.key,
@@ -638,25 +633,22 @@ class ZoteroDatabase():
              + (i['shortTitle'] or i['title'] or 'Unknown Title') for i in items_list}
         return autocomplete_dict
 
-    # def get_attachments(self, key, local_cursor=None):
-    #     sql = """SELECT
-    #         --i.key,
-    #         ia.path
-    #     FROM items i
-    #     LEFT JOIN itemAttachments ia ON i.itemID = ia.parentItemID
-    #     WHERE i.key = ?
-    #     ;"""
-    #     cursor = local_cursor or self.cursor
-    #     cursor.execute(sql, (key,))
-    #     # columns = [c[0] for c in cursor.description]
-    #     data = cursor.fetchall()
-    #
-    #     attachment_list = [att[0] for att in data]
-    #     attachment_list.remove(None)
-    #     return attachment_list
-
     def create_attachment(self, file_name, parent_key=None, local_cursor=None):
+        """
+        Creates an attachment item for a corresponding parent key in the zotero
+        cloud. Currently only pdf files in the default storage location
+        supported.
 
+        Arguments:
+            file_name: File name incl. pdf extension
+            parent_key: key of the parent item, if attachment should be attached
+            to it
+            local_cursor: currently not supported, items will be created in the
+            zotero cloud
+
+        Returns:
+            key of the created item if successful, otherwise None
+        """
         if local_cursor is not None:
             warnings.warn("Not implemented. Modifying local db is dangerous")
         else:
@@ -675,5 +667,17 @@ class ZoteroDatabase():
                 return None
 
     def update_items(self, items):
+        """
+        Update item data in the zotero cloud.
+
+        Arguments:
+            items: list of item data dictionaries. dictionaries must have form
+            of zotero API. each dictionary must have a 'version' key with the
+            latest version of the item in the zotero cloud, otherwise item will
+            not be updated.
+
+        Returns:
+            True if successful
+        """
         self.zot.check_items(items)
         return self.zot.update_items(items)

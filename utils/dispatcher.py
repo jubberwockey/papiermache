@@ -1,5 +1,11 @@
+"""
+Dispatches incoming commands
+"""
+
 import os
 import warnings
+import shutil
+import datetime
 from prompt_toolkit.completion import NestedCompleter
 from lisc.requester import Requester
 from lisc.urls.open_citations import OpenCitations
@@ -49,6 +55,7 @@ class Dispatcher():
 
         self.session = session
         self.db = ZoteroDatabase(local=local)
+        self.scihub = None
 
         self.completions = None
         self.papers = None
@@ -57,6 +64,9 @@ class Dispatcher():
         self.selected_keys = None
 
     def build_completer(self):
+        """
+        Generates autocompletes for publications for various commands.
+        """
         self.completions = dict(self.cmd_template)
 
         self.papers = self.db.get_autocompletes()
@@ -70,18 +80,29 @@ class Dispatcher():
         return NestedCompleter.from_nested_dict(self.completions)
 
     def get_completer(self):
+        """
+        Returns completer instance for handling autocompletes
+        """
         return self.completer
 
     def get_exit_commands(self):
+        """
+        Returns possible commands for exiting program
+        """
         return self.exit_cmds
 
     def shutdown(self):
+        """
+        Cleanup for proper shutdown of program
+        """
         self.db.close_connection()
         return 0
 
     def verify_command(self, cmd_list):
-        """checks if command follows structure of a valid command
-        still very fishy, validates every word..."""
+        """
+        Checks if command follows structure of a valid command.
+        still very fishy, validates every word...
+        """
         def recursive_verify(cmd_list, commands):
             if len(cmd_list) > 0:
                 cmd = cmd_list.pop(0)
@@ -106,6 +127,9 @@ class Dispatcher():
         return recursive_verify(cmd_list_copy, self.completions)
 
     def execute(self, input):
+        """
+        Sends input command to dispatch.
+        """
         cmd = input.split()
         if len(cmd) > 0:
             self.dispatch(cmd)
@@ -113,6 +137,10 @@ class Dispatcher():
         #     self.dispatch(cmd)
 
     def dispatch(self, cmd_list):
+        """
+        Parses input command and dispatches it to the appropriate execution
+        commands.
+        """
         execute_cmd = cmd_list.pop(0)
 
         if execute_cmd == 'find':
@@ -125,18 +153,37 @@ class Dispatcher():
                 self.execute_add_pdf(cmd_list)
             if execute_cmd == 'relations':
                 self.execute_add_relations(cmd_list)
+        elif execute_cmd == 'backup':
+            self.execute_backup(cmd_list)
 
     def execute_find(self, cmd_list):
-        pass
+        """
+        Find free-form input in database metadata. Return corresponding entries.
+        Not implemented yet.
+        """
+        warnings.warn("Not implemented!")
 
     def execute_select(self, cmd_list):
+        """
+        Select one or multiple keys in the database to perform further actions
+        on.
+        """
         return self.select_keys(cmd_list)
 
     def execute_add_relations(self, cmd_list):
+        """
+        Search the DOI API to retrieve citation relations between publications.
+        Update relations between existing publications in the database.
+        If no arguments given, use publications selected by execute_select.
+        """
         if len(cmd_list) == 0:
             selected_keys = self.selected_keys
         else:
             selected_keys = self.select_keys(cmd_list)
+
+        if selected_keys is None:
+            print("No keys selected.")
+            return None
 
         all_items = self.db.get_items()
         dois = {i['DOI'].lower(): i['key'] for i in all_items if 'DOI' in i}
@@ -150,18 +197,18 @@ class Dispatcher():
                 relations = doi_relations_dict['citing'] + doi_relations_dict['cited_by']
                 relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
                              + dois[doi] for doi in relations if doi in dois]
-                if relations == []:
+                if len(relations) == 0:
                     items.remove(item)
-                    print('Skipped', key, '. No relations found.')
+                    print('Skipped', key, self.papers[key], '. No relations found.')
                     continue
                 else:
-                    print('Relations found:', relations)
+                    print(key, self.papers[key], '. Relations found.')
 
                 if 'relations' in item:
                     current_relations = item['relations'].get('dc:relation', [])
                     if set(relations) <= set(current_relations):
                         items.remove(item)
-                        print('Skipped', key, '. No update necessary.')
+                        print('Skipped', key, self.papers[key], '. No update necessary.')
                         continue
                     relations_dict = {'dc:relation': list(set(relations + current_relations))}
                     item['relations'].update(relations_dict)
@@ -169,7 +216,7 @@ class Dispatcher():
                     relations_dict = {'dc:relation': relations}
                     item['relations'] = relations_dict
             else:
-                print('Skipped', key, '. No DOI found.')
+                print('Skipped', key, self.papers[key], '. No DOI found.')
                 items.remove(item)
 
         if len(items) > 0:
@@ -177,10 +224,19 @@ class Dispatcher():
                 print('Update successful')
 
     def execute_add_pdf(self, cmd_list):
+        """
+        Downloads pdfs for selected publications if no pdf present and updates
+        selected publications in the database.
+        If no argument given use selected publications from execute_select.
+        """
         if len(cmd_list) == 0:
             selected_keys = self.selected_keys
         else:
             selected_keys = self.select_keys(cmd_list)
+
+        if selected_keys is None:
+            print("No keys selected.")
+            return None
 
         file_types = ['pdf', 'epub', 'djvu', 'mobi', 'okular']
 
@@ -213,16 +269,75 @@ class Dispatcher():
                     print('Created key', created_key)
                     return created_key
 
+    def execute_backup(self, cmd_list):
+        """
+        Create a backup of the local database file.
+        Accepts arguments:
+            no argument: use default name (zotero_timestamp.sqlite) and location
+                (/home/user/Zotero/)
+            file: create file.sqlite in default location
+            file.ext: create file.ext in default location
+            path/file: create file.sqlite in specified path
+            path/file.ext: create file.ext in specified path
+        """
+        cmd = ' '.join(cmd_list)
+
+        self.db.close_connection()
+
+        db_path = os.environ['ZOTERO_DB_PATH']
+        db_dir = os.path.dirname(db_path)
+
+        if len(cmd) > 0:
+            backup_dir = os.path.dirname(cmd)
+            file = os.path.basename(cmd)
+            _, ext = os.path.splitext(file)
+            if len(ext) == 0:
+                file += '.sqlite'
+
+            if len(backup_dir) > 0:
+                if os.path.isdir(backup_dir):
+                    backup_path = os.path.join(backup_dir, file)
+                else:
+                    raise NameError("Directory does not exist.")
+            else:
+                backup_path = os.path.join(db_dir, file)
+        else:
+            file, ext = os.path.splitext(os.path.basename(db_path))
+            file += '_' + datetime.datetime.now().isoformat() + ext
+            backup_path = os.path.join(db_dir, file)
+
+        if backup_path == db_path:
+            raise NameError("File and backup path identical.")
+
+        shutil.copy2(db_path, backup_path)
+        self.db.cursor = self.db.connect()
+
+        return True
+
     def download_file(self, url, file_path, source='scihub'):
+        """
+        Attempt download of pdf for given URL or DOI.
+
+        Arguments:
+            url: URL or DOI of publication
+            file_path: path including file name of downloaded pdf
+            source: currently only 'scihub' supported
+        Returns:
+            True if download successful
+        """
         if source == 'scihub':
-            scihub = SciHub(use_fallback=False)
-            result = scihub.download(url, path=file_path)
+            if self.scihub is None:
+                self.scihub = SciHub(use_fallback=True)
+            result = self.scihub.download(url, path=file_path)
             if 'err' not in result:
                 return True
             else:
                 return False
 
     def select_keys(self, cmd_list):
+        """
+        Select one or multiple keys of database entries for further operations.
+        """
         selected = ' '.join(cmd_list)
         if selected == 'none':
             selected_keys = None
@@ -234,6 +349,20 @@ class Dispatcher():
         return selected_keys
 
     def build_file_name(self, item_dict, file_type='pdf'):
+        """
+        Emulate file naming scheme of the zotfile extension for saved pdfs:
+        name_name2_year_title.file_type
+        name_et al_year_title.file_type
+        Note: There is no guarantee, that the naming is identical (especially if
+        year is missing or title is too long).
+
+        Arguments:
+            item_dict: item['data'] dict from zotero API
+            file_type: file extension
+
+        Returns:
+            file name
+        """
         if 'creators' in item_dict:
             name = item_dict['creators'][0]['lastName']
             if len(item_dict['creators']) == 2:
@@ -255,6 +384,15 @@ class Dispatcher():
         return file_name
 
     def get_relations_by_doi(self, doi):
+        """
+        Obtains DOIs of citing articles and cited articles for a given DOI from
+        the DOI database API.
+
+        Returns:
+            dict
+                'citing': DOIs which are cited in this publication
+                'cited_by': DOIs of articles which cited this publication
+        """
         oc = OpenCitations()
         req = Requester(wait_time=0.1, logging=None)
         relations_dict = {}

@@ -2,7 +2,10 @@ import re
 
 
 def get_doi(item):
-
+    """
+    retrieve DOI from DOI data field for zotero item data, otherwise parse
+    DOI from URL or items extra data field.
+    """
     def get_match(s, regex):
         r = re.compile(regex, re.IGNORECASE)
         match = r.search(s)
