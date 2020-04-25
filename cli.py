@@ -1,35 +1,23 @@
-import sys
 from prompt_toolkit import PromptSession
 from utils.dispatcher import Dispatcher
 import asyncio
 
 
-def shutdown(dispatcher, msg=''):
-    print(msg)
-    dispatcher.shutdown()
-    sys.exit(0)
-
-async def main():
-    s = PromptSession()
-    d = Dispatcher(session=s)
-
-    exit_cmds = d.get_exit_commands()
+async def main(disp):
+    exit_cmds = disp.get_exit_commands()
     input = ''
     while input not in exit_cmds:
-        try:
-            input = await asyncio.wait_for(s.prompt_async('>', completer=d.get_completer()), timeout=60)
-            d.execute(input)
-        except (KeyboardInterrupt, EOFError):
-            shutdown(d, "Manual Interrupt, exiting...")
-        except asyncio.TimeoutError:
-            shutdown(d, "Timeout, shutting down...")
+        input = await asyncio.wait_for(disp.session.prompt_async('>', completer=disp.get_completer()), timeout=60)
+        disp.execute(input)
 
-    shutdown(d, "Exiting...")
+    disp.shutdown("Exiting...")
 
 
 if __name__ == '__main__':
+    disp = Dispatcher(session=PromptSession())
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        # need to clean up here
-        print("KeyboardInterrupt")
+        asyncio.run(main(disp))
+    except (KeyboardInterrupt, EOFError):
+        disp.shutdown("Manual Interrupt, exiting...")
+    except asyncio.TimeoutError:
+        disp.shutdown("Timeout, shutting down...")
