@@ -21,3 +21,6 @@ if __name__ == '__main__':
         disp.shutdown("Manual Interrupt, exiting...")
     except asyncio.TimeoutError:
         disp.shutdown("Timeout, shutting down...")
+    except Exception as e:
+        disp.shutdown("An error occured, shutting down...")
+        raise e

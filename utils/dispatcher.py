@@ -3,6 +3,7 @@ Dispatches incoming commands
 """
 
 import os
+import sys
 import warnings
 import shutil
 import datetime
@@ -24,7 +25,7 @@ class Dispatcher():
                 'all': None,
                 'none': None,
                 'collection': None,
-                'tag': None,
+                'tags': None,
                 },
             'backup': None,
             'add': {
@@ -32,13 +33,13 @@ class Dispatcher():
                     'all': None,
                     'none': None,
                     'collection': None,
-                    'tag': None,
+                    'tags': None,
                     },
                 'relations': {
                     'all': None,
                     'none': None,
                     'collection': None,
-                    'tag': None,
+                    'tags': None,
                     },
                 },
             'fix': {
@@ -46,7 +47,7 @@ class Dispatcher():
                     'all': None,
                     'none': None,
                     'collection': None,
-                    'tag': None,
+                    'tags': None,
                     },
                 }
             }
@@ -91,12 +92,13 @@ class Dispatcher():
         """
         return self.exit_cmds
 
-    def shutdown(self):
+    def shutdown(self, msg=''):
         """
         Cleanup for proper shutdown of program
         """
         self.db.close_connection()
-        return 0
+        print(msg)
+        return sys.exit(0)
 
     def verify_command(self, cmd_list):
         """
@@ -159,9 +161,11 @@ class Dispatcher():
     def execute_find(self, cmd_list):
         """
         Find free-form input in database metadata. Return corresponding entries.
-        Not implemented yet.
+        Only key search implemented yet.
         """
-        warnings.warn("Not implemented!")
+        warnings.warn("Only key search implemented!")
+        key = cmd_list.pop(0)
+        print(self.papers.get(key))
 
     def execute_select(self, cmd_list):
         """
@@ -189,6 +193,8 @@ class Dispatcher():
         dois = {i['DOI'].lower(): i['key'] for i in all_items if 'DOI' in i}
         items = [i for i in all_items if i['key'] in selected_keys]
 
+        # j = 0
+        items_update = list()
         for item in items:
             key = item['key']
             if 'DOI' in item:
@@ -197,30 +203,22 @@ class Dispatcher():
                 relations = doi_relations_dict['citing'] + doi_relations_dict['cited_by']
                 relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
                              + dois[doi] for doi in relations if doi in dois]
-                if len(relations) == 0:
-                    items.remove(item)
-                    print('Skipped', key, self.papers[key], '. No relations found.')
-                    continue
-                else:
-                    print(key, self.papers[key], '. Relations found.')
 
-                if 'relations' in item:
-                    current_relations = item['relations'].get('dc:relation', [])
-                    if set(relations) <= set(current_relations):
-                        items.remove(item)
-                        print('Skipped', key, self.papers[key], '. No update necessary.')
-                        continue
-                    relations_dict = {'dc:relation': list(set(relations + current_relations))}
-                    item['relations'].update(relations_dict)
+                if len(relations) > 0:
+                    current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
+                    if not (set(relations) <= set(current_relations)):
+                        item['relations']['dc:relation'] = list(set(relations + current_relations))
+                        items_update.append(item)
+                        print('Relations found:\n', key, self.papers[key])
+                    else:
+                        print('No update necessary:\n', key, self.papers[key])
                 else:
-                    relations_dict = {'dc:relation': relations}
-                    item['relations'] = relations_dict
+                    print('No Relations found:\n', key, self.papers[key])
             else:
-                print('Skipped', key, self.papers[key], '. No DOI found.')
-                items.remove(item)
+                print('No DOI found:\n', key, self.papers[key])
 
-        if len(items) > 0:
-            if self.db.update_items(items):
+        if len(items_update) > 0:
+            if self.db.update_items(items_update):
                 print('Update successful')
 
     def execute_add_pdf(self, cmd_list):
