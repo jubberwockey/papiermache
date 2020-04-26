@@ -35,7 +35,7 @@ class ZoteroDatabase():
         if self.cursor is not None:
             return self.cursor.close()
 
-    def build_sql(self, sql, keys=[], parent_keys=[], item_type='', tags='', limit=-1, groupby=[]):
+    def build_sql(self, sql, keys=[], parent_keys=[], item_type='', tags=[], limit=-1, groupby=[]):
         """
         Build complete SQL statement from sql stub to query the zotero database.
 
@@ -66,8 +66,9 @@ class ZoteroDatabase():
             types = map(lambda s: "'{}'".format(s), item_type.split(' || '))
             sql += '\nAND it.typeName ' + negate + 'IN (' + ','.join(types) + ')'
 
-        if tags != '':
-            warnings.warn("tag filter not implemented")
+        if tags != []:
+            pass
+            # warnings.warn("tag filter not implemented")
             # '\nAND GROUP_CONCAT(t.name) NOT LIKE "%{}%"''.format()
 
         if len(groupby) > 0:
@@ -81,7 +82,7 @@ class ZoteroDatabase():
         sql += ";"
         return sql
 
-    def get_items(self, keys=[], item_type='', tags='', limit=-1, local_cursor=None, use_cache=False):
+    def get_items(self, keys=[], item_type='', tags=[], limit=-1, local_cursor=None, use_cache=False):
         """
         Gets list of zotero data items from either the local database or through
         the zotero API.
@@ -102,6 +103,9 @@ class ZoteroDatabase():
         """
         if not isinstance(keys, list):
             keys = [keys]
+
+        if not isinstance(tags, list):
+            tags = [tags]
 
         cursor = local_cursor or self.cursor
 
@@ -136,14 +140,15 @@ class ZoteroDatabase():
                     items = [i for i in items if i['key'] in keys]
                 if len(item_type) > 0:
                     pass
-                if len(tags) > 0:
-                    pass
                 if limit >= 0:
                     items = items[0:limit]
 
+            if len(tags) > 0:
+                items = [i for i in items if all(t in [t.get('tag') for t in i.get('tags', {})] for t in tags)]
+
         return items
 
-    def get_notes(self, keys=[], parent_keys=[], tags='', limit=-1, local_cursor=None):
+    def get_notes(self, keys=[], parent_keys=[], tags=[], limit=-1, local_cursor=None):
         """
         Retrieves note items from local database of zotero API.
 
@@ -188,7 +193,7 @@ class ZoteroDatabase():
 
         return items
 
-    def get_attachments(self, keys=[], parent_keys=[], tags='', limit=-1, local_cursor=None):
+    def get_attachments(self, keys=[], parent_keys=[], tags=[], limit=-1, local_cursor=None):
         """
         Retrieves attachment items from local database of zotero API.
 
@@ -231,7 +236,7 @@ class ZoteroDatabase():
         return items
 
 
-    def get_items_data_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+    def get_items_data_local(self, cursor=None, keys=[], item_type='', tags=[], limit=-1):
         """
         Retrieves item data from local database to build zotero item.
 
@@ -319,7 +324,7 @@ class ZoteroDatabase():
             items_list = list(map(lambda i: {k:v for k, v in i.items() if v is not None}, full_item_dict))
             return items_list
 
-    def get_notes_data_local(self, cursor=None, keys=[], parent_keys=[], tags='', limit=-1):
+    def get_notes_data_local(self, cursor=None, keys=[], parent_keys=[], tags=[], limit=-1):
         """
         Retrieves notes data from local database to build zotero item.
 
@@ -361,7 +366,7 @@ class ZoteroDatabase():
             notes_list = list(map(lambda i: {k:v for k, v in i.items() if v is not None}, notes_dict))
             return notes_list
 
-    def get_attachments_data_local(self, cursor=None, keys=[], parent_keys=[], tags='', limit=-1):
+    def get_attachments_data_local(self, cursor=None, keys=[], parent_keys=[], tags=[], limit=-1):
         """
         Retrieves attachment data from local database to build zotero item.
 
@@ -422,7 +427,7 @@ class ZoteroDatabase():
             attachments_list = list(map(lambda i: {k:v for k, v in i.items() if v is not None}, attachments_dict))
             return attachments_list
 
-    def get_items_creators_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+    def get_items_creators_local(self, cursor=None, keys=[], item_type='', tags=[], limit=-1):
         """
         Retrieves creator data from local database to build zotero item.
 
@@ -468,7 +473,7 @@ class ZoteroDatabase():
 
             return creators_dict
 
-    def get_items_tags_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+    def get_items_tags_local(self, cursor=None, keys=[], item_type='', tags=[], limit=-1):
         """
         Retrieves tags data from local database to build zotero item.
 
@@ -513,7 +518,7 @@ class ZoteroDatabase():
 
             return tags_dict
 
-    def get_items_relations_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+    def get_items_relations_local(self, cursor=None, keys=[], item_type='', tags=[], limit=-1):
         """
         Retrieves relations data from local database to build zotero item.
 
@@ -556,7 +561,7 @@ class ZoteroDatabase():
 
             return relations_dict
 
-    def get_items_collections_local(self, cursor=None, keys=[], item_type='', tags='', limit=-1):
+    def get_items_collections_local(self, cursor=None, keys=[], item_type='', tags=[], limit=-1):
         """
         Retrieves collections data from local database to build zotero item.
 
