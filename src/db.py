@@ -3,6 +3,7 @@ import warnings
 from sqlite3 import connect
 from pyzotero.zotero import Zotero
 import json
+from collections import defaultdict
 
 
 
@@ -82,7 +83,7 @@ class ZoteroDatabase():
         sql += ";"
         return sql
 
-    def get_items(self, keys=[], item_type='', tags=[], limit=-1, local_cursor=None, use_cache=False):
+    def get_items(self, keys=[], item_type='-note || attachment', tags=[], limit=-1, local_cursor=None, use_cache=False):
         """
         Gets list of zotero data items from either the local database or through
         the zotero API.
@@ -178,6 +179,7 @@ class ZoteroDatabase():
                 items = [i['data'] for i in items]
             else:
                 warnings.warn("parent_keys not supported for remote database.")
+                items = []
         else:
             items = self.get_notes_data_local(local_cursor, keys, parent_keys, tags, limit)
             tags_data = self.get_items_tags_local(local_cursor, keys, item_type, tags, limit)
@@ -223,6 +225,7 @@ class ZoteroDatabase():
                 items = [i['data'] for i in items]
             else:
                 warnings.warn("parent_keys not supported for remote database.")
+                items = []
         else:
             items = self.get_attachments_data_local(local_cursor, keys, parent_keys, tags, limit)
             tags_data = self.get_items_tags_local(local_cursor, keys, item_type, tags, limit)
@@ -620,6 +623,8 @@ class ZoteroDatabase():
             engine: First author name, year - title.
         """
 
+        # TODO: autocomplete filters for items with title and author only!
+        # rather it should give all items which are not note or attachment!
         sql = """SELECT
             i.key,
             --c.firstName,
@@ -648,6 +653,19 @@ class ZoteroDatabase():
         autocomplete_dict = {i['key']: (i['lastName'] or 'No Author') + ', ' + (i['year'] or 'xxxx') + ' - '
              + (i['shortTitle'] or i['title'] or 'Unknown Title') for i in items_list}
         return autocomplete_dict
+
+    def get_autocomplete_tags(self, cursor=None):
+        items = self.get_items(local_cursor=cursor)
+        # tag_set = {t.get('tag'): None for i in items for t in i.get('tags', {})
+                   # if t['type'] == 0}
+        tags_dict = defaultdict(list)
+        for i in items:
+            for t in i.get('tags', ['none']):
+                if t == 'none':
+                    tags_dict['none'].append(i['key'])
+                elif t['type'] == 0:
+                    tags_dict[t['tag']].append(i['key'])
+        return dict(tags_dict)
 
     def create_attachment(self, file_name, parent_key=None, local_cursor=None):
         """

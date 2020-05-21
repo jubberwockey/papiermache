@@ -10,10 +10,12 @@ import datetime
 from prompt_toolkit.completion import NestedCompleter
 from lisc.requester import Requester
 from lisc.urls.open_citations import OpenCitations
-from utils.db import ZoteroDatabase
-from utils.scihub import SciHub
-import utils.utils as utils
+from src.db import ZoteroDatabase
+from src.scihub import SciHub
+import src.utils as utils
 import unicodedata
+import concurrent.futures as cf
+import copy
 
 class Dispatcher():
 
@@ -21,34 +23,14 @@ class Dispatcher():
         self.exit_cmds = ['exit', 'q', 'quit']
         self.cmd_template = {
             'find': None,
-            'select': {
-                'all': None,
-                'none': None,
-                'collection': None,
-                'tags': None,
-                },
+            'select': None,
             'backup': None,
             'add': {
-                'pdf': {
-                    'all': None,
-                    'none': None,
-                    'collection': None,
-                    'tags': None,
-                    },
-                'relations': {
-                    'all': None,
-                    'none': None,
-                    'collection': None,
-                    'tags': None,
-                    },
+                'pdf': None,
+                'relations': None,
                 },
             'fix': {
-                'path': {
-                    'all': None,
-                    'none': None,
-                    'collection': None,
-                    'tags': None,
-                    },
+                'path': None,
                 }
             }
         self.cmd_template.update({c: None for c in self.exit_cmds})
@@ -59,8 +41,9 @@ class Dispatcher():
         self.scihub = None
 
         self.completions = None
-        self.papers = None
-        self.papers_reverse = None
+        self.papers = self.db.get_autocompletes()
+        self.papers_reverse = {v: k for k, v in self.papers.items()}
+        self.tags = self.db.get_autocomplete_tags()
         self.completer = self.build_completer()
         self.selected_keys = None
 
@@ -68,15 +51,30 @@ class Dispatcher():
         """
         Generates autocompletes for publications for various commands.
         """
-        self.completions = dict(self.cmd_template)
 
-        self.papers = self.db.get_autocompletes()
-        self.papers_reverse = {v: k for k, v in self.papers.items()}
+        selections = {
+            'all': None,
+            'none': None,
+            'collection': None,
+            'tags': {},
+            }
+        self.completions = dict(self.cmd_template)
+        self.completions['select'] = selections
+        self.completions['add']['pdf'] = selections
+        self.completions['add']['relations'] = selections
+        self.completions['fix']['path'] = selections
+
         paper_completions = {v: None for v in self.papers.values()}
         self.completions['select'].update(paper_completions)
         self.completions['add']['pdf'].update(paper_completions)
         self.completions['add']['relations'].update(paper_completions)
         self.completions['fix']['path'].update(paper_completions)
+
+        tag_completions = {v: None for v in self.tags.keys()}
+        self.completions['select']['tags'].update(tag_completions)
+        self.completions['add']['pdf']['tags'].update(tag_completions)
+        self.completions['add']['relations']['tags'].update(tag_completions)
+        self.completions['fix']['path']['tags'].update(tag_completions)
 
         return NestedCompleter.from_nested_dict(self.completions)
 
@@ -193,33 +191,33 @@ class Dispatcher():
         dois = {i['DOI'].lower(): i['key'] for i in all_items if 'DOI' in i}
         items = [i for i in all_items if i['key'] in selected_keys]
 
-        # j = 0
         items_update = list()
-        for item in items:
-            key = item['key']
-            if 'DOI' in item:
-                doi = item['DOI']
-                doi_relations_dict = self.get_relations_by_doi(doi)
-                relations = doi_relations_dict['citing'] + doi_relations_dict['cited_by']
-                relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
-                             + dois[doi] for doi in relations if doi in dois]
-
-                if len(relations) > 0:
-                    current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
-                    if not (set(relations) <= set(current_relations)):
-                        item['relations']['dc:relation'] = list(set(relations + current_relations))
-                        items_update.append(item)
-                        print('Relations found:\n', key, self.papers[key])
-                    else:
-                        print('No update necessary:\n', key, self.papers[key])
-                else:
-                    print('No Relations found:\n', key, self.papers[key])
-            else:
-                print('No DOI found:\n', key, self.papers[key])
-
-        if len(items_update) > 0:
+        with cf.ThreadPoolExecutor() as pool:
+            futures = [pool.submit(self.item_add_relations,
+                                   copy.deepcopy(i), dois) for i in items]
+            for f in cf.as_completed(futures):
+                fres = f.result()
+                if fres is not None:
+                    fres = {key: fres.get(key) for key in ['key', 'version', 'relations']}
+                    items_update.append(fres)
+                if len(items_update) >= 50: # zotero api can only handle 50 item updates
+                    print('Submitting', [i['key'] for i in items_update])
+                    if self.db.update_items(items_update):
+                        print('Update successful')
+                    items_update = list()
+            print('Submitting', [i['key'] for i in items_update])
             if self.db.update_items(items_update):
                 print('Update successful')
+            items_update = list()
+
+        #     for i in items:
+        #         item = copy.deepcopy(i)
+        #         futures = pool.submit(self.item_add_relations, item, dois)
+        # items_update = [f.result() for f in futures if f.result() is not None]
+        #
+        # if len(items_update) > 0:
+        #     if self.db.update_items(items_update):
+        #         print('Update successful')
 
     def execute_add_pdf(self, cmd_list):
         """
@@ -336,12 +334,19 @@ class Dispatcher():
         """
         Select one or multiple keys of database entries for further operations.
         """
-        selected = ' '.join(cmd_list)
+        # selected = ' '.join(cmd_list)
+        selected = cmd_list[0]
         if selected == 'none':
             selected_keys = None
         elif selected == 'all':
             selected_keys = self.papers.keys()
+        elif selected == 'tags':
+            selected = ' '.join(cmd_list[1:])
+            selected_keys = self.tags[selected]
+        elif selected == 'collections':
+            pass
         else:
+            selected = ' '.join(cmd_list)
             selected_keys = self.papers_reverse[selected]
         print('Selected:', selected_keys)
         return selected_keys
@@ -406,3 +411,25 @@ class Dispatcher():
         req.close()
 
         return relations_dict
+
+    def item_add_relations(self, item, dois):
+        key = item['key']
+        if 'DOI' in item:
+            doi = item['DOI']
+            doi_relations_dict = self.get_relations_by_doi(doi)
+            relations = doi_relations_dict['citing'] + doi_relations_dict['cited_by']
+            relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
+                         + dois[doi] for doi in relations if doi in dois]
+
+            if len(relations) > 0:
+                current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
+                if not (set(relations) <= set(current_relations)):
+                    item['relations']['dc:relation'] = list(set(relations + current_relations))
+                    print('Relations found:\n', key, self.papers[key])
+                    return item
+                else:
+                    print('No update necessary:\n', key, self.papers[key])
+            else:
+                print('No Relations found:\n', key, self.papers[key])
+        else:
+            print('No DOI found:\n', key, self.papers[key])
