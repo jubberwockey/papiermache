@@ -33,7 +33,7 @@ class Dispatcher():
                 'path': None,
                 }
             }
-        self.cmd_template.update({c: None for c in self.exit_cmds})
+        self.cmd_template.update({c: None for c in self.get_exit_commands()})
         self.paper_dir = os.environ['PAPER_PATH']
 
         self.session = session
@@ -98,33 +98,33 @@ class Dispatcher():
         print(msg)
         return sys.exit(0)
 
-    def verify_command(self, cmd_list):
-        """
-        Checks if command follows structure of a valid command.
-        still very fishy, validates every word...
-        """
-        def recursive_verify(cmd_list, commands):
-            if len(cmd_list) > 0:
-                cmd = cmd_list.pop(0)
-                if commands is not None:
-                    if cmd in commands:
-                        return recursive_verify(cmd_list, commands[cmd])
-                    else:
-                        warnings.warn('input not valid: {}'.format(cmd))
-                        return False
-                # collides with free-form input:
-                else:
-                    warnings.warn('too many inputs: {}'.format(cmd))
-                    return False
-            else:
-                if commands is not None:
-                    warnings.warn('additional input missing')
-                    return False
-                else:
-                    return True
-        # recursive_verify manipulates list, therefore copy:
-        cmd_list_copy = list(cmd_list)
-        return recursive_verify(cmd_list_copy, self.completions)
+    # def verify_command(self, cmd_list):
+    #     """
+    #     Checks if command follows structure of a valid command.
+    #     still very fishy, validates every word...
+    #     """
+    #     def recursive_verify(cmd_list, commands):
+    #         if len(cmd_list) > 0:
+    #             cmd = cmd_list.pop(0)
+    #             if commands is not None:
+    #                 if cmd in commands:
+    #                     return recursive_verify(cmd_list, commands[cmd])
+    #                 else:
+    #                     warnings.warn('input not valid: {}'.format(cmd))
+    #                     return False
+    #             # collides with free-form input:
+    #             else:
+    #                 warnings.warn('too many inputs: {}'.format(cmd))
+    #                 return False
+    #         else:
+    #             if commands is not None:
+    #                 warnings.warn('additional input missing')
+    #                 return False
+    #             else:
+    #                 return True
+    #     # recursive_verify manipulates list, therefore copy:
+    #     cmd_list_copy = list(cmd_list)
+    #     return recursive_verify(cmd_list_copy, self.completions)
 
     def execute(self, input):
         """

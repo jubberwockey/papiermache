@@ -133,9 +133,11 @@ class ZoteroDatabase():
             else:
                 warnings.warn("Filters not fully implemented")
                 sql = """SELECT s.data FROM syncCache s;"""
+
                 cursor.execute(sql)
                 columns = [c[0] for c in cursor.description]
                 data = cursor.fetchall()
+
                 items = [json.loads(i[0])['data'] for i in data]
                 if len(keys) > 0:
                     items = [i for i in items if i['key'] in keys]
@@ -610,9 +612,6 @@ class ZoteroDatabase():
         """
         Provides a convenience dictionary for building the autocomplete engine.
         Data is retrieved from the local database only, not the zotero API!
-        Returns only entries with a title or short title!
-        For some reason first author in the database does not necessarily match
-        first author in the zotero UI!
 
         Arguments:
             local_cursor: cursor for local database. If None, attempt using the
@@ -639,9 +638,10 @@ class ZoteroDatabase():
         LEFT JOIN itemData id ON i.itemID = id.itemID
         LEFT JOIN fields f ON id.fieldID = f.fieldID
         LEFT JOIN itemDataValues idv ON id.valueID = idv.valueID
-        WHERE ic.orderIndex = 0 -- only first author
-        AND fieldName IN ('title', 'shortTitle', 'date')
-        GROUP BY i.key;"""
+		LEFT JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
+        WHERE it.typeName NOT IN ('attachment','note')
+        GROUP BY i.key
+		ORDER BY ic.orderIndex;"""
 
         cursor = local_cursor or self.cursor
 
@@ -656,8 +656,7 @@ class ZoteroDatabase():
 
     def get_autocomplete_tags(self, cursor=None):
         items = self.get_items(local_cursor=cursor)
-        # tag_set = {t.get('tag'): None for i in items for t in i.get('tags', {})
-                   # if t['type'] == 0}
+        
         tags_dict = defaultdict(list)
         for i in items:
             for t in i.get('tags', ['none']):
