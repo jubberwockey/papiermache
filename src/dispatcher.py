@@ -7,6 +7,7 @@ import sys
 import warnings
 import shutil
 import datetime
+import requests
 from prompt_toolkit.completion import NestedCompleter
 from lisc.requester import Requester
 from lisc.urls.open_citations import OpenCitations
@@ -178,6 +179,12 @@ class Dispatcher():
         Update relations between existing publications in the database.
         If no arguments given, use publications selected by execute_select.
         """
+
+        def submit_items(items_update):
+            print('Submitting', [i['key'] for i in items_update])
+            if self.db.update_items(items_update):
+                print('Update successful')
+
         if len(cmd_list) == 0:
             selected_keys = self.selected_keys
         else:
@@ -188,27 +195,26 @@ class Dispatcher():
             return None
 
         all_items = self.db.get_items()
-        dois = {i['DOI'].lower(): i['key'] for i in all_items if 'DOI' in i}
-        items = [i for i in all_items if i['key'] in selected_keys]
+        dois = {i['key']: utils.get_doi(i) for i in all_items if utils.get_doi(i)}
+        dois_reversed = {v: k for k, v in dois.items()}
+
+        items = [i for i in all_items if i['key'] in selected_keys
+                                      and i['key'] in dois]
 
         items_update = list()
         with cf.ThreadPoolExecutor() as pool:
-            futures = [pool.submit(self.item_add_relations,
-                                   copy.deepcopy(i), dois) for i in items]
+            futures = [pool.submit(self.get_item_relations,
+                                   copy.deepcopy(i), dois_reversed) for i in items]
             for f in cf.as_completed(futures):
                 fres = f.result()
                 if fres is not None:
-                    fres = {key: fres.get(key) for key in ['key', 'version', 'relations']}
+                    # fres = {key: fres.get(key) for key in ['key', 'version', 'relations']}
                     items_update.append(fres)
                 if len(items_update) >= 50: # zotero api can only handle 50 item updates
-                    print('Submitting', [i['key'] for i in items_update])
-                    if self.db.update_items(items_update):
-                        print('Update successful')
+                    submit_items(items_update)
                     items_update = list()
-            print('Submitting', [i['key'] for i in items_update])
-            if self.db.update_items(items_update):
-                print('Update successful')
-            items_update = list()
+            if len(items_update) > 0:
+                submit_items(items_update)
 
         #     for i in items:
         #         item = copy.deepcopy(i)
@@ -391,6 +397,9 @@ class Dispatcher():
         Obtains DOIs of citing articles and cited articles for a given DOI from
         the DOI database API.
 
+        Arguments
+            doi: DOI str
+
         Returns:
             dict
                 'citing': DOIs which are cited in this publication
@@ -402,7 +411,12 @@ class Dispatcher():
         for util in ['references', 'citations']:
             oc.build_url(util=util)
             url = oc.get_url(util=util, segments=[doi], settings={'format': 'json'})
-            result = req.request_url(url).json()
+            response = req.request_url(url)
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                except requests.exceptions.JSONDecodeError:
+                    result = {}
 
             if util == 'references':
                 relations_dict['citing'] = [r['cited'] for r in result]
@@ -412,10 +426,20 @@ class Dispatcher():
 
         return relations_dict
 
-    def item_add_relations(self, item, dois):
+    def get_item_relations(self, item, dois):
+        """
+        Creates item dict for updating relations suited for parallelization.
+
+        Arguments:
+            item: item['data'] dict from zotero API
+            dois: {doi: key} dict for all DOIs in library
+
+        Returns:
+            dict with keys ['key', 'version', 'relations']
+        """
         key = item['key']
-        if 'DOI' in item:
-            doi = item['DOI']
+        doi = utils.get_doi(item)
+        if doi:
             doi_relations_dict = self.get_relations_by_doi(doi)
             relations = doi_relations_dict['citing'] + doi_relations_dict['cited_by']
             relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
@@ -424,9 +448,10 @@ class Dispatcher():
             if len(relations) > 0:
                 current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
                 if not (set(relations) <= set(current_relations)):
-                    item['relations']['dc:relation'] = list(set(relations + current_relations))
+                    item_update = {k: v for k, v in item.items() if k in ['key', 'version', 'relations']}
+                    item_update['relations']['dc:relation'] = list(set(relations + current_relations))
                     print('Relations found:\n', key, self.papers[key])
-                    return item
+                    return item_update
                 else:
                     print('No update necessary:\n', key, self.papers[key])
             else:

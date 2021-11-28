@@ -36,7 +36,7 @@ class ZoteroDatabase():
         if self.cursor is not None:
             return self.cursor.close()
 
-    def build_sql(self, sql, keys=[], parent_keys=[], item_type='', tags=[], limit=-1, groupby=[]):
+    def build_sql(self, sql, keys=[], parent_keys=[], item_type='', tags=[], limit=-1, groupby=[], orderby=[]):
         """
         Build complete SQL statement from sql stub to query the zotero database.
 
@@ -75,7 +75,8 @@ class ZoteroDatabase():
         if len(groupby) > 0:
             sql += "\nGROUP BY {}".format(','.join(groupby))
 
-        # sql += "\nORDER BY i.key"
+        if len(orderby) > 0:
+            sql += "\nORDER BY {}".format(','.join(orderby))
 
         if limit > 0:
             sql += "\nLIMIT " + str(limit)
@@ -318,7 +319,8 @@ class ZoteroDatabase():
             LEFT JOIN itemDataValues idv ON id.valueID = idv.valueID
             WHERE TRUE"""
 
-            sql = self.build_sql(sql, keys, [], item_type, tags, limit, groupby=['i.key'])
+            sql = self.build_sql(sql, keys, [], item_type, tags, limit,
+                                 groupby=['i.key'])
 
             cursor.execute(sql)
             columns = [c[0] for c in cursor.description]
@@ -421,7 +423,8 @@ class ZoteroDatabase():
             LEFT JOIN itemNotes "in" ON i.itemID = "in".ItemID
             WHERE TRUE
             """
-            sql = self.build_sql(sql, keys, parent_keys, 'attachment', tags, limit, groupby=['i.key'])
+            sql = self.build_sql(sql, keys, parent_keys, 'attachment',
+                                 tags, limit, groupby=['i.key'])
 
             cursor.execute(sql)
             columns = [c[0] for c in cursor.description]
@@ -466,7 +469,9 @@ class ZoteroDatabase():
             WHERE ct.creatorType IS NOT NULL
             """
 
-            sql = self.build_sql(sql, keys, [], item_type, tags, limit, groupby=['i.key', 'c.firstName', 'c.lastName'])
+            sql = self.build_sql(sql, keys, [], item_type, tags, limit,
+                                 groupby=['i.key', 'c.firstName', 'c.lastName'],
+                                 orderby=['i.key', 'ic.orderIndex'])
 
             cursor.execute(sql)
             columns = [c[0] for c in cursor.description]
@@ -505,10 +510,11 @@ class ZoteroDatabase():
             LEFT JOIN itemTags it ON i.itemID = it.itemID
             LEFT JOIN tags t ON it.tagID = t.tagID
             LEFT JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
-            WHERE it.type IS NOT NULL
+            WHERE it.type = 0 -- IS NOT NULL
             """
 
-            sql = self.build_sql(sql, keys, [], item_type, tags, limit, groupby=['i.key', 't.name'])
+            sql = self.build_sql(sql, keys, [], item_type, tags, limit,
+                                 groupby=['i.key', 't.name'])
 
             cursor.execute(sql)
             columns = [c[0] for c in cursor.description]
@@ -553,7 +559,8 @@ class ZoteroDatabase():
             WHERE ir.object IS NOT NULL
             """
 
-            sql = self.build_sql(sql, keys, [], item_type, tags, limit, groupby=['i.key', 'ir.object'])
+            sql = self.build_sql(sql, keys, [], item_type, tags, limit,
+                                 groupby=['i.key', 'ir.object'])
 
             cursor.execute(sql)
             columns = [c[0] for c in cursor.description]
@@ -596,7 +603,8 @@ class ZoteroDatabase():
             WHERE c.key IS NOT NULL
             """
 
-            sql = self.build_sql(sql, keys, [], item_type, tags, limit, groupby=['i.key', 'c.key'])
+            sql = self.build_sql(sql, keys, [], item_type, tags, limit,
+                                 groupby=['i.key', 'c.key'])
 
             cursor.execute(sql)
             columns = [c[0] for c in cursor.description]
@@ -622,26 +630,37 @@ class ZoteroDatabase():
             engine: First author name, year - title.
         """
 
-        # TODO: autocomplete filters for items with title and author only!
-        # rather it should give all items which are not note or attachment!
         sql = """SELECT
             i.key,
-            --c.firstName,
-            c.lastName,
-            MAX(CASE WHEN fieldName = 'shortTitle' THEN value END) AS shortTitle,
-            MAX(CASE WHEN fieldName = 'title' THEN value END) AS title,
-            MAX(CASE WHEN fieldName = 'date' THEN SUBSTR(value, 0, INSTR(value, '-')) END) AS year
+            MAX(CASE WHEN ic.orderIndex = icmin.orderIndex THEN c.lastName ELSE '' END) AS lastName,
+            MAX(CASE WHEN f.fieldName = 'shortTitle' THEN idv.value END) AS shortTitle,
+            MAX(CASE WHEN f.fieldName = 'title' THEN idv.value END) AS title,
+            MAX(CASE WHEN f.fieldName = 'date' THEN SUBSTR(idv.value, 0, INSTR(idv.value, '-')) ELSE '' END) AS year
         FROM items i
         LEFT JOIN itemCreators ic ON i.itemID = ic.itemID
         LEFT JOIN creators c ON ic.creatorID = c.creatorID
         LEFT JOIN creatorTypes ct ON ic.creatorTypeID = ct.creatorTypeID
+		LEFT JOIN (SELECT
+				ic.itemID,
+				CASE WHEN MIN(CASE WHEN ct.creatorType = 'author' THEN ic.orderIndex END)
+					THEN MIN(CASE WHEN ct.creatorType = 'author' THEN ic.orderIndex END)
+					ELSE MIN(ic.orderIndex)
+				END AS orderIndex
+			FROM items i
+			LEFT JOIN itemCreators ic ON i.itemID = ic.itemID
+			LEFT JOIN creators c ON ic.creatorID = c.creatorID
+			LEFT JOIN creatorTypes ct ON ic.creatorTypeID = ct.creatorTypeID
+			LEFT JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
+			GROUP BY ic.itemID) icmin ON ic.itemID = icmin.itemID
         LEFT JOIN itemData id ON i.itemID = id.itemID
         LEFT JOIN fields f ON id.fieldID = f.fieldID
         LEFT JOIN itemDataValues idv ON id.valueID = idv.valueID
 		LEFT JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
         WHERE it.typeName NOT IN ('attachment','note')
         GROUP BY i.key
-		ORDER BY ic.orderIndex;"""
+		ORDER BY CASE WHEN ic.orderIndex = icmin.orderIndex THEN c.lastName END,
+                 CASE WHEN f.fieldName = 'date' THEN idv.value END
+        ;"""
 
         cursor = local_cursor or self.cursor
 
@@ -650,13 +669,13 @@ class ZoteroDatabase():
         data = cursor.fetchall()
 
         items_list = [dict(zip(columns, item)) for item in data]
-        autocomplete_dict = {i['key']: (i['lastName'] or 'No Author') + ', ' + (i['year'] or 'xxxx') + ' - '
+        autocomplete_dict = {i['key']: ''.join(i['lastName'].split()).lower() + i['year'] + ' - '
              + (i['shortTitle'] or i['title'] or 'Unknown Title') for i in items_list}
         return autocomplete_dict
 
     def get_autocomplete_tags(self, cursor=None):
         items = self.get_items(local_cursor=cursor)
-        
+
         tags_dict = defaultdict(list)
         for i in items:
             for t in i.get('tags', ['none']):
