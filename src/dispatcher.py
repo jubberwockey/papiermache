@@ -8,7 +8,7 @@ import warnings
 import shutil
 import datetime
 import requests
-from prompt_toolkit.completion import NestedCompleter
+from prompt_toolkit.completion import NestedCompleter, WordCompleter, merge_completers
 from lisc.requester import Requester
 from lisc.urls.open_citations import OpenCitations
 from src.db import ZoteroDatabase
@@ -22,19 +22,6 @@ class Dispatcher():
 
     def __init__(self, session, local=True):
         self.exit_cmds = ['exit', 'q', 'quit']
-        self.cmd_template = {
-            'find': None,
-            'select': None,
-            'backup': None,
-            'add': {
-                'pdf': None,
-                'relations': None,
-                },
-            'fix': {
-                'path': None,
-                }
-            }
-        self.cmd_template.update({c: None for c in self.get_exit_commands()})
         self.paper_dir = os.environ['PAPER_PATH']
 
         self.session = session
@@ -53,29 +40,33 @@ class Dispatcher():
         Generates autocompletes for publications for various commands.
         """
 
+        paper_completions = WordCompleter(self.papers.values())
+        tag_completions = WordCompleter(self.tags.keys())
+
         selections = {
             'all': None,
             'none': None,
             'collection': None,
-            'tags': {},
+            'tags': tag_completions,
             }
-        self.completions = dict(self.cmd_template)
-        self.completions['select'] = selections
-        self.completions['add']['pdf'] = selections
-        self.completions['add']['relations'] = selections
-        self.completions['fix']['path'] = selections
 
-        paper_completions = {v: None for v in self.papers.values()}
-        self.completions['select'].update(paper_completions)
-        self.completions['add']['pdf'].update(paper_completions)
-        self.completions['add']['relations'].update(paper_completions)
-        self.completions['fix']['path'].update(paper_completions)
+        paper_selection_completions = merge_completers([NestedCompleter.from_nested_dict(selections),
+                                                        paper_completions])
 
-        tag_completions = {v: None for v in self.tags.keys()}
-        self.completions['select']['tags'].update(tag_completions)
-        self.completions['add']['pdf']['tags'].update(tag_completions)
-        self.completions['add']['relations']['tags'].update(tag_completions)
-        self.completions['fix']['path']['tags'].update(tag_completions)
+        self.completions = {
+            'find': None,
+            'select': paper_selection_completions,
+            'backup': None,
+            'add': {
+                'pdf': paper_selection_completions,
+                'relations': paper_selection_completions,
+                'link': paper_completions,
+                },
+            'fix': {
+                'path': paper_selection_completions,
+                }
+            }
+        self.completions.update({c: None for c in self.get_exit_commands()})
 
         return NestedCompleter.from_nested_dict(self.completions)
 
@@ -147,13 +138,15 @@ class Dispatcher():
         if execute_cmd == 'find':
             self.execute_find(cmd_list)
         elif execute_cmd == 'select':
-            self.selected_keys = self.execute_select(cmd_list)
+            self.execute_select(cmd_list)
         elif execute_cmd == 'add':
             execute_cmd = cmd_list.pop(0)
             if execute_cmd == 'pdf':
                 self.execute_add_pdf(cmd_list)
             if execute_cmd == 'relations':
                 self.execute_add_relations(cmd_list)
+            if execute_cmd == 'link':
+                self.execute_add_link(cmd_list)
         elif execute_cmd == 'backup':
             self.execute_backup(cmd_list)
 
@@ -171,7 +164,7 @@ class Dispatcher():
         Select one or multiple keys in the database to perform further actions
         on.
         """
-        return self.select_keys(cmd_list)
+        self.selected_keys = self.select_keys(cmd_list)
 
     def execute_add_relations(self, cmd_list):
         """
@@ -208,22 +201,12 @@ class Dispatcher():
             for f in cf.as_completed(futures):
                 fres = f.result()
                 if fres is not None:
-                    # fres = {key: fres.get(key) for key in ['key', 'version', 'relations']}
                     items_update.append(fres)
                 if len(items_update) >= 50: # zotero api can only handle 50 item updates
                     submit_items(items_update)
                     items_update = list()
             if len(items_update) > 0:
                 submit_items(items_update)
-
-        #     for i in items:
-        #         item = copy.deepcopy(i)
-        #         futures = pool.submit(self.item_add_relations, item, dois)
-        # items_update = [f.result() for f in futures if f.result() is not None]
-        #
-        # if len(items_update) > 0:
-        #     if self.db.update_items(items_update):
-        #         print('Update successful')
 
     def execute_add_pdf(self, cmd_list):
         """
@@ -270,6 +253,74 @@ class Dispatcher():
                     created_key = self.db.create_attachment(file_name, key)
                     print('Created key', created_key)
                     return created_key
+
+    def execute_add_link(self, cmd_list):
+        """
+        Adds a hyperlink (Zotero URL) to pdf of another item.
+        Adds relation between items as well if not yet present.
+        Useful for linking to chapters of books.
+        ATTENTION: overwrites URL
+
+        Accepts arguments:
+            paper page: if previously 1 paper selected, link to page in paper
+            paper paper page: link 1st paper to page in 2nd paper
+        """
+        if len(cmd_list) < 2:
+            print("Too few arguments given, abort.")
+            return
+
+        page = cmd_list.pop(-1)
+        try:
+            page = int(page)
+        except ValueError:
+            print("No valid page number provided. Abort.")
+            return
+
+        ref_key = self.select_keys(cmd_list, verbose=False)[0]
+        if ref_key is not None:
+            # if only one key given, other key must have been provided by select command
+            if self.selected_keys is None or len(self.selected_keys) != 1:
+                print("None or multiple keys selected before, abort.")
+                return
+            else:
+                selected_key = self.selected_keys[0]
+        else:
+            # if two papers listed, won't be found by select_keys, need to manually find first paper
+            keys_str = ' '.join(cmd_list)
+            for p in self.papers_reverse:
+                if keys_str.startswith(p):
+                    selected_key = self.papers_reverse[p]
+                    print(keys_str[len(p)+1:])
+                    ref_key = self.select_keys(keys_str[len(p)+1:].split(' '),
+                                               verbose=False)[0]
+            if ref_key is None:
+                print("Cannot find key, abort.")
+                return
+
+        # use zotero API to retrieve children; TODO: use local db
+        children = self.db.zot.children(ref_key)
+        pdf_key = None
+        for c in children:
+            if c['data'].get('contentType', None) == 'application/pdf':
+                if pdf_key is None:
+                    pdf_key = c['key']
+                else:
+                    print("Multiple pdfs found. Abort.")
+                    return
+        if pdf_key is None:
+            print("No pdf found")
+            return
+
+        item = self.db.get_items(keys=selected_key)[0]
+
+        item_update = {k: v for k, v in item.items() if k in ['key', 'version']}
+        item_update['url'] = 'zotero://open-pdf/library/items/{pdf_key}?page={page}'.format(pdf_key=pdf_key, page=page)
+        relations_update = self.merge_item_relations(item, ref_key, verbose=False)
+        if relations_update is not None:
+            item_update['relations'] = relations_update
+        self.db.update_items([item_update])
+        print("Link updated")
+
 
     def execute_backup(self, cmd_list):
         """
@@ -336,7 +387,7 @@ class Dispatcher():
             else:
                 return False
 
-    def select_keys(self, cmd_list):
+    def select_keys(self, cmd_list, verbose=True):
         """
         Select one or multiple keys of database entries for further operations.
         """
@@ -348,13 +399,14 @@ class Dispatcher():
             selected_keys = self.papers.keys()
         elif selected == 'tags':
             selected = ' '.join(cmd_list[1:])
-            selected_keys = self.tags[selected]
+            selected_keys = self.tags.get(selected)
         elif selected == 'collections':
             pass
         else:
             selected = ' '.join(cmd_list)
-            selected_keys = self.papers_reverse[selected]
-        print('Selected:', selected_keys)
+            selected_keys = [self.papers_reverse.get(selected)]
+        if verbose:
+            print('Selected:', selected_keys)
         return selected_keys
 
     def build_file_name(self, item_dict, file_type='pdf'):
@@ -426,6 +478,38 @@ class Dispatcher():
 
         return relations_dict
 
+    def merge_item_relations(self, item, keys, verbose=True):
+        """
+        Merges new relations with current relations in item['relations'].
+
+        Arguments:
+            item: dict
+            keys: list or str of new relation key(s)
+
+        Returns:
+            item['relations'] dict
+        """
+        if isinstance(keys, str):
+            keys = [keys]
+
+        item = copy.deepcopy(item)
+        key = item['key']
+        relations = ['http://zotero.org/users/' + self.db.user_id + '/items/' + k for k in keys]
+
+        if len(relations) > 0:
+            current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
+            if not (set(relations) <= set(current_relations)):
+                item['relations']['dc:relation'] = list(set(relations + current_relations))
+                if verbose:
+                    print('Relations found:\n', key, self.papers[key])
+                return item['relations']
+            else:
+                if verbose:
+                    print('No update necessary:\n', key, self.papers[key])
+        else:
+            if verbose:
+                print('No Relations found:\n', key, self.papers[key])
+
     def get_item_relations(self, item, dois):
         """
         Creates item dict for updating relations suited for parallelization.
@@ -442,19 +526,24 @@ class Dispatcher():
         if doi:
             doi_relations_dict = self.get_relations_by_doi(doi)
             relations = doi_relations_dict['citing'] + doi_relations_dict['cited_by']
-            relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
-                         + dois[doi] for doi in relations if doi in dois]
-
-            if len(relations) > 0:
-                current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
-                if not (set(relations) <= set(current_relations)):
-                    item_update = {k: v for k, v in item.items() if k in ['key', 'version', 'relations']}
-                    item_update['relations']['dc:relation'] = list(set(relations + current_relations))
-                    print('Relations found:\n', key, self.papers[key])
-                    return item_update
-                else:
-                    print('No update necessary:\n', key, self.papers[key])
-            else:
-                print('No Relations found:\n', key, self.papers[key])
+            keys = [dois[doi] for doi in relations if doi in dois]
+            # relations = ['http://zotero.org/users/' + self.db.user_id + '/items/'
+            #              + dois[doi] for doi in relations if doi in dois]
+            relations_update = self.merge_item_relations(item, keys, verbose=True)
+            if relations_update is not None:
+                item_update = {k: v for k, v in item.items() if k in ['key', 'version', 'relations']}
+                item_update['relations'] = relations_update
+                return item_update
+            #
+            # if len(relations) > 0:
+            #     current_relations = item.setdefault('relations', {}).setdefault('dc:relation', [])
+            #     if not (set(relations) <= set(current_relations)):
+            #         item_update['relations']['dc:relation'] = list(set(relations + current_relations))
+            #         print('Relations found:\n', key, self.papers[key])
+            #         return item_update
+            #     else:
+            #         print('No update necessary:\n', key, self.papers[key])
+            # else:
+            #     print('No Relations found:\n', key, self.papers[key])
         else:
             print('No DOI found:\n', key, self.papers[key])

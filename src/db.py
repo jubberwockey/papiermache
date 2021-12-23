@@ -627,7 +627,7 @@ class ZoteroDatabase():
 
         Returns:
             dict with database key and corresponding name for the autocomplete
-            engine: First author name, year - title.
+            engine: authornameYear - title.
         """
 
         sql = """SELECT
