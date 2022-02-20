@@ -50,6 +50,12 @@ class ZoteroDatabase():
             limit: number of items to retrieve. If -1, return all items
             groupby: list of keys to group by
         """
+        keys = list(keys)
+        parent_keys = list(parent_keys)
+        tags = list(tags)
+        groupby = list(groupby)
+        orderby = list(orderby)
+
         if len(keys) > 0:
             keys_str = ','.join(map(lambda s: "'{}'".format(s), keys))
             sql += "\nAND i.key IN ({})".format(keys_str)
@@ -103,10 +109,10 @@ class ZoteroDatabase():
         Returns:
             list of zotero data items conforming to the zotero API format
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
-        if not isinstance(tags, list):
+        if isinstance(tags, str):
             tags = [tags]
 
         cursor = local_cursor or self.cursor
@@ -165,10 +171,10 @@ class ZoteroDatabase():
             local_cursor: if None, get items over API. There is a limit to
             retrieved items. If local cursor specified, use the local database
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
-        if not isinstance(parent_keys, list):
+        if isinstance(parent_keys, str):
             parent_keys = [parent_keys]
 
         cursor = local_cursor or self.cursor
@@ -211,10 +217,10 @@ class ZoteroDatabase():
             local_cursor: if None, get items over API. There is a limit to
             retrieved items. If local cursor specified, use the local database
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
-        if not isinstance(parent_keys, list):
+        if isinstance(parent_keys, str):
             parent_keys = [parent_keys]
 
         cursor = local_cursor or self.cursor
@@ -254,7 +260,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -342,7 +348,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -384,7 +390,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -446,7 +452,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -459,6 +465,7 @@ class ZoteroDatabase():
                 ct.creatorType,
                 c.firstName,
                 c.lastName
+                --,c.fieldMode
             FROM items i
             LEFT JOIN itemCreators ic ON i.itemID = ic.itemID
             LEFT JOIN creators c ON ic.creatorID = c.creatorID
@@ -494,7 +501,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -540,7 +547,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -584,7 +591,7 @@ class ZoteroDatabase():
             tags: filter for tags, see build_sql
             limit: limit returned items, see build_sql
         """
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
             keys = [keys]
 
         cursor = cursor or self.cursor
@@ -733,3 +740,22 @@ class ZoteroDatabase():
         """
         self.zot.check_items(items)
         return self.zot.update_items(items)
+
+    def batch_update_items(self, items, batch_size=50):
+        """
+        Update item data in the zotero cloud in batches.
+
+        Arguments:
+            items: list of item data dictionaries. dictionaries must have form
+            of zotero API. each dictionary must have a 'version' key with the
+            latest version of the item in the zotero cloud, otherwise item will
+            not be updated.
+            batch_size: default=50
+
+        Returns:
+            True if successful
+        """
+        batches, rem = divmod(len(items), batch_size)
+        for n in range(batches+1):
+            # accessing lists beyond last index seems to be ok
+            self.update_items(items[n*batch_size:(n+1)*batch_size])

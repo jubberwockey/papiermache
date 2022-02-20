@@ -17,6 +17,7 @@ import src.utils as utils
 import unicodedata
 import concurrent.futures as cf
 import copy
+import json
 
 class Dispatcher():
 
@@ -64,6 +65,7 @@ class Dispatcher():
                 },
             'fix': {
                 'path': paper_selection_completions,
+                'names': paper_selection_completions,
                 }
             }
         self.completions.update({c: None for c in self.get_exit_commands()})
@@ -147,6 +149,10 @@ class Dispatcher():
                 self.execute_add_relations(cmd_list)
             if execute_cmd == 'link':
                 self.execute_add_link(cmd_list)
+        elif execute_cmd == 'fix':
+            execute_cmd = cmd_list.pop(0)
+            if execute_cmd == 'names':
+                self.execute_fix_names(cmd_list)
         elif execute_cmd == 'backup':
             self.execute_backup(cmd_list)
 
@@ -290,7 +296,6 @@ class Dispatcher():
             for p in self.papers_reverse:
                 if keys_str.startswith(p):
                     selected_key = self.papers_reverse[p]
-                    print(keys_str[len(p)+1:])
                     ref_key = self.select_keys(keys_str[len(p)+1:].split(' '),
                                                verbose=False)[0]
             if ref_key is None:
@@ -321,6 +326,25 @@ class Dispatcher():
         self.db.update_items([item_update])
         print("Link updated")
 
+    def execute_fix_names(self, cmd_list):
+        """
+        Fix names. In safe_mode, create blacklist
+        ATTENTION: make sure to create blacklist when all items selected
+
+        """
+        if len(cmd_list) == 0:
+            selected_keys = self.selected_keys
+        else:
+            selected_keys = self.select_keys(cmd_list)
+
+        if selected_keys is None:
+            print("No keys selected.")
+            return None
+
+        items_update = self.fix_names(selected_keys, safe_mode=True,
+                                      blacklist_path='./data/blacklist.json')
+
+        self.db.batch_update_items(items_update)
 
     def execute_backup(self, cmd_list):
         """
@@ -547,3 +571,144 @@ class Dispatcher():
             #     print('No Relations found:\n', key, self.papers[key])
         else:
             print('No DOI found:\n', key, self.papers[key])
+
+
+    def fix_name(self, name_dict, names, safe_mode=True, blacklist=None):
+        """
+        Does the following things in this order:
+        Adds dots to abbreviated first names.
+        Tries to complete first names if present in database.
+        Tries to find additional first names.
+        Tries to convert full name to first name-last name style.
+
+        Arguments:
+            name_dict: dict of one creator
+            names: set of tuples of all names {(firstName, lastName, (first, names, abbreviated))}
+            safe_mode: bool, skip possibly ambivalent operations
+            blacklist: blacklist json of creators
+
+        Returns:
+            status: -1: no changes
+                    0: changed
+                    >0: skipped, bitmask
+            dict of changed name, otherwise None
+        """
+        status = 0
+
+        if blacklist is not None:
+            if name_dict in blacklist:
+                print("Skipped: {} blacklisted.".format(name_dict))
+                return 1, None
+
+        fnames = name_dict['firstName']
+        fnames_lst = fnames.split()
+        lname = name_dict['lastName']
+        lname_lst = lname.split()
+
+        # convert full names to first name, last name
+        if len(lname_lst) > 1 and fnames == '':
+            if safe_mode:
+                print('Safe Mode: Skipped splitting full name {}'.format(lname))
+                status += 2
+            else:
+                fnames_lst = lname_lst[:-1]
+                lname = lname_lst[-1]
+                print('Splitted full name into {} {}'.format(fnames_lst, lname))
+
+        # add dots
+        names_abbr = tuple( n + '.' if len(n) == 1 else n for n in fnames_lst )
+        fnames_mod = ' '.join(names_abbr)
+
+        # TODO: find full & additional names simultaneously
+        full_fnames = list()
+        add_fnames = list()
+        for n in names:
+            if lname == n[1]:
+                # check for full first names
+                if names_abbr == n[2]:
+                    full_fnames.append(n[0])
+
+                # check for additional first names
+                other_fnames = n[0].split()
+                num_names = len(fnames_lst)
+                if fnames_lst == other_fnames[:num_names] and num_names < len(other_fnames):
+                    # safe mode: only change if first(!) first name not abbreviated:
+                    if safe_mode:
+                        if len(other_fnames[0].replace('.', '')) > 1:
+                            add_fnames.append(n[0])
+                        else:
+                            print('Safe Mode: Skipped only abbreviated first name {} {}'.format(n[0], n[1]))
+                            status += 4
+                    else:
+                        add_fnames.append(n[0])
+
+        for lst in [add_fnames, full_fnames]:
+            if len(lst) == 1:
+                fnames_mod = lst[0]
+                print('Changed {} into {} {}'.format(fnames, fnames_mod, lname))
+            elif len(lst) > 1:
+                print('Skipped: Multiple first names found for {} {}'.format(lst, lname))
+                status += 8
+
+        name_dict_mod = copy.deepcopy(name_dict)
+        name_dict_mod['firstName'] = fnames_mod
+        name_dict_mod['lastName'] = lname
+
+        if status > 0:
+            return status, None
+        else:
+            if name_dict_mod != name_dict:
+                return status, name_dict_mod
+            else:
+                return -1, None
+
+    def fix_names(self, keys=[], safe_mode=True, blacklist_path=None):
+        """
+        Fix names for selected keys
+
+        Arguments
+            keys: list of keys
+            safe_mode: if True, skip ambivalent renamings. If blacklist_path not None, create blacklist
+            blacklist_path: path to blacklist json
+
+        """
+        def create_abbr(name):
+            name_lst = name.split()
+            if sum(c.isalpha() for c in name) > len(name_lst):
+                return tuple( n[0] + '.'  for n in name_lst )
+
+        if blacklist_path is not None:
+            try:
+                with open(blacklist_path, 'r') as f:
+                    blacklist = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                blacklist = None
+
+        all_items = self.db.get_items()
+        names = { ( c.get('firstName', ''), c.get('lastName', ''),
+                create_abbr(c.get('firstName', '')) ) for i in all_items for c in i.get('creators', []) }
+
+        items = self.db.get_items(keys)
+
+        items_mod = list()
+        names_skipped = list()
+        for i in items:
+            creators_mod = copy.deepcopy(i.get('creators', []))
+            mod = 0
+            for n, c in enumerate(i.get('creators', [])):
+                status, name_mod = self.fix_name(c, names, safe_mode=safe_mode, blacklist=blacklist)
+                if status == 0:
+                    creators_mod[n] = name_mod
+                    mod +=1
+                elif status > 0:
+                    names_skipped.append(c)
+            if mod > 0:
+                item_mod = {'key': i['key'], 'version': i['version'], 'creators': creators_mod}
+                items_mod.append(item_mod)
+
+        if blacklist_path is not None and safe_mode:
+            skipped = [dict(t) for t in {tuple(sorted(d.items())) for d in names_skipped}]
+            with open(blacklist_path, 'w') as f:
+                json.dump(skipped, f, indent=4)
+
+        return items_mod
