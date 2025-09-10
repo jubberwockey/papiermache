@@ -1,23 +1,18 @@
 [
     {
+        "creatorType": "contributor",
+        "firstName": "",
+        "lastName": "Human Economy Center"
+    },
+    {
         "creatorType": "editor",
         "firstName": "",
-        "lastName": "Internationaler W\u00e4hrungsfonds"
-    },
-    {
-        "creatorType": "author",
-        "firstName": "",
-        "lastName": "Russell Sage Foundation"
+        "lastName": "Konzeptwerk Neue \u00d6konomie"
     },
     {
         "creatorType": "contributor",
         "firstName": "",
-        "lastName": "Verbraucherzentrale NRW"
-    },
-    {
-        "creatorType": "contributor",
-        "firstName": "",
-        "lastName": "World Bank"
+        "lastName": "Kantar Deutschland GmbH"
     },
     {
         "creatorType": "contributor",
@@ -30,9 +25,14 @@
         "lastName": "Fondation europ\u00e9enne pour l'am\u00e9lioration des conditions de vie et de travail"
     },
     {
-        "creatorType": "editor",
+        "creatorType": "director",
         "firstName": "",
-        "lastName": "Konzeptwerk Neue \u00d6konomie"
+        "lastName": "SCRIPTS Berlin"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "The American Economic Association"
     },
     {
         "creatorType": "editor",
@@ -42,17 +42,52 @@
     {
         "creatorType": "editor",
         "firstName": "",
-        "lastName": "Clio Infra (Project)"
+        "lastName": "Organisation for Economic Co-operation and Development"
     },
     {
         "creatorType": "author",
         "firstName": "",
-        "lastName": "Stiftung Berlin-Institut f\u00fcr Bev\u00f6lkerung u. Entwicklung"
+        "lastName": "Russell Sage Foundation"
+    },
+    {
+        "creatorType": "contributor",
+        "firstName": "",
+        "lastName": "Osmania University"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "New Economics Foundation"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "Deutsches Institut F\u00fcr Wirtschaftsforschung (DIW Berlin)"
     },
     {
         "creatorType": "editor",
         "firstName": "",
         "lastName": "New Economics Foundation"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "ABC Research Group"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "The Royal Economic Society"
+    },
+    {
+        "creatorType": "contributor",
+        "firstName": "",
+        "lastName": "World Bank"
+    },
+    {
+        "creatorType": "editor",
+        "firstName": "",
+        "lastName": "National Bureau of Economic Research"
     },
     {
         "creatorType": "contributor",
@@ -67,22 +102,17 @@
     {
         "creatorType": "contributor",
         "firstName": "",
-        "lastName": "Sustainable Development Commission"
+        "lastName": "Annual Arizona workshop on normative ethics"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "Stiftung Berlin-Institut f\u00fcr Bev\u00f6lkerung u. Entwicklung"
     },
     {
         "creatorType": "contributor",
         "firstName": "",
-        "lastName": "Human Economy Center"
-    },
-    {
-        "creatorType": "author",
-        "firstName": "",
-        "lastName": "ABC Research Group"
-    },
-    {
-        "creatorType": "author",
-        "firstName": "",
-        "lastName": "W\u00fcstenrot Stiftung"
+        "lastName": "Verbraucherzentrale NRW"
     },
     {
         "creatorType": "editor",
@@ -92,26 +122,21 @@
     {
         "creatorType": "contributor",
         "firstName": "",
-        "lastName": "Osmania University"
+        "lastName": "Sustainable Development Commission"
+    },
+    {
+        "creatorType": "author",
+        "firstName": "",
+        "lastName": "W\u00fcstenrot Stiftung"
     },
     {
         "creatorType": "editor",
         "firstName": "",
-        "lastName": "Organisation for Economic Co-operation and Development"
+        "lastName": "Clio Infra (Project)"
     },
     {
-        "creatorType": "author",
+        "creatorType": "editor",
         "firstName": "",
-        "lastName": "Deutsches Institut F\u00fcr Wirtschaftsforschung (DIW Berlin)"
-    },
-    {
-        "creatorType": "author",
-        "firstName": "",
-        "lastName": "New Economics Foundation"
-    },
-    {
-        "creatorType": "contributor",
-        "firstName": "",
-        "lastName": "Kantar Deutschland GmbH"
+        "lastName": "Internationaler W\u00e4hrungsfonds"
     }
 ]
