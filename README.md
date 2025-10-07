@@ -63,10 +63,10 @@ python cli.py
 ### Basic Commands
 
 The CLI offers autocomplete for all commands, incl. paper names, collections and tags.
-- `select [paper]|all|none|collection [coll] |tags [tags]` - select specific papers of groups of papers for further tasks
+- `select [paper] | all | none | collection [coll] |tags [tags]` - select specific papers, tags, or collections of papers for further tasks
 - `find [paper]` - find and select paper by name
-- `add pdf|relations|link [paper]` - functions to perform, if executed without optional paper, executes function for `select`ed papers
-- `fix path|names [paper]` as above
+- `add pdf | relations | link [paper]` - functions to perform. If executed without optional paper, executes function for `select`ed papers
+- `fix path | names [paper]` as above
 
 ## Project Structure
 
